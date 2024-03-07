@@ -26,64 +26,13 @@ def experiment(alg):
     # MDP
     horizon = 1000
     gamma = 0.99
-    mdp = DMControl('hopper', 'hop', horizon, gamma, use_pixels=False)
-
-    # # agent = alg.load("checkpoint/walker/transfer_1_Q_10000_steps_policy")
-    # initial_replay_size = 3 * horizon
-    # max_replay_size = int(1e6)
-    # batch_size = 256
-    # n_features = 256
-    # warmup_transitions = 10 * horizon
-    # tau = 0.005
-    # lr_alpha = 3e-4
-    #
-    # use_cuda = torch.cuda.is_available()
-    #
-    # # Approximator
-    # actor_input_shape = mdp.info.observation_space.shape
-    # actor_mu_params = dict(network=ActorNetwork,
-    #                        n_features=n_features,
-    #                        input_shape=actor_input_shape,
-    #                        output_shape=mdp.info.action_space.shape,
-    #                        use_cuda=use_cuda)
-    # actor_sigma_params = dict(network=ActorNetwork,
-    #                           n_features=n_features,
-    #                           input_shape=actor_input_shape,
-    #                           output_shape=mdp.info.action_space.shape,
-    #                           use_cuda=use_cuda)
-    #
-    # actor_optimizer = {'class': optim.Adam,
-    #                    'params': {'lr': 1e-4}}
-    #
-    # critic_input_shape = (actor_input_shape[0] + mdp.info.action_space.shape[0],)
-    # critic_params = dict(network=CriticNetwork,
-    #                      optimizer={'class': optim.Adam,
-    #                                 'params': {'lr': 3e-4}},
-    #                      loss=F.mse_loss,
-    #                      n_features=n_features,
-    #                      input_shape=critic_input_shape,
-    #                      output_shape=(1,),
-    #                      use_cuda=use_cuda)
-    #
-    # # Agent
-    # agent = SAC(mdp.info, actor_mu_params, actor_sigma_params,
-    #             actor_optimizer, critic_params, batch_size, initial_replay_size,
-    #             max_replay_size, warmup_transitions, tau, lr_alpha,
-    #             log_std_min=-20, log_std_max=2, critic_fit_params=None)
-
+    mdp = DMControl('quadruped', 'walk', horizon, gamma, use_pixels=False)
 
     # Agent
-    agent = Agent.load("checkpoint/hopper_hop/sac_nomimal_exp_0_epoch_1990_0")
+    agent = Agent.load("checkpoint/quadruped_walk/sac_nomimal_exp_0_epoch_1940_0")
     # Algorithm
     core = Core(agent, mdp)
-    # # core.learn(n_steps=1, n_steps_per_fit=1)
-    # agent.save("checkpoint/walker/sac_nomimal_exp_test", full_save=True)
-    # agent =alg.load("checkpoint/walker/sac_nomimal_exp_test")
-    # agent.save("checkpoint/walker/sac_nomimal_exp_test", full_save=True)
-    # agent = alg.load("checkpoint/walker/sac_nomimal_exp_test")
 
-
-    # input()
     dataset =core.evaluate(n_episodes=3, render=True)
     s, *_ = parse_dataset(dataset)
 
