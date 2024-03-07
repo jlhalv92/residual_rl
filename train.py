@@ -49,11 +49,11 @@ def experiment(alg, experiment_id, cfg=None):
         )
     # Settings
 
-    initial_replay_size = 3*horizon
+    initial_replay_size = cfg.initial_replay_size
     max_replay_size = int(cfg.num_train_steps)
     batch_size = cfg.agent.model.params.batch_size
     n_features = cfg.agent.critic.params.n_features
-    warmup_transitions = 10*horizon
+    warmup_transitions = cfg.warmup_transitions
     tau = cfg.agent.critic.params.critic_tau
     lr_alpha = cfg.agent.model.params.alpha_lr
     freq_checkpoints = cfg.freq_checkpoints

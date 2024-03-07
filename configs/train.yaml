@@ -20,7 +20,8 @@ num_steps: 500
 num_epochs: 2000
 num_eval_episodes: 10
 cuda: true
-
+initial_replay_size: 3000
+warmup_transitions: 5000
 # logger
 log_wandb: True
 wandb_project: ${experiment}_${env.robot}_${env.task}
