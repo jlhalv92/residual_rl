@@ -59,6 +59,7 @@ class Core(object):
             quiet (bool, False): whether to show the progress bar or not.
 
         """
+
         assert (n_episodes_per_fit is not None and n_steps_per_fit is None)\
             or (n_episodes_per_fit is None and n_steps_per_fit is not None)
 
@@ -185,7 +186,13 @@ class Core(object):
             of the reached state and the last step flag.
 
         """
-        action = self.agent.draw_action(self._state)
+
+        if self._residual:
+            action = self.agent.draw_noisy_action(self._state)
+
+        else:
+            action = self.agent.draw_action(self._state)
+
         next_state, reward, absorbing, _ = self.mdp.step(action)
 
         self._episode_steps += 1

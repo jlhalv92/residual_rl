@@ -1,20 +1,66 @@
 import numpy as np
-from mushroom_rl.algorithms.actor_critic.deep_actor_critic import SAC
 from src.networks.networks import ActorNetwork, CriticNetwork
 
 import torch
 import torch.nn as nn
-import torch.optim as optim
 import torch.nn.functional as F
-from src.core.core import Core
-from src.algorithm.deep_actor_critic.boosted_rl import BRL,BRLReset
+
 from mushroom_rl.core import Logger, Core
-# from mushroom_rl.environments.dm_control_env import DMControl
 from src.envs.dm_control_env import DMControl
 from mushroom_rl.utils.dataset import compute_J, parse_dataset
-import wandb
 from mushroom_rl.core import Agent
 from mushroom_rl.algorithms.actor_critic.deep_actor_critic import SAC
+class CriticNetwork(nn.Module):
+    def __init__(self, input_shape, output_shape, n_features, **kwargs):
+        super().__init__()
+
+        n_input = input_shape[-1]
+        n_output = output_shape[0]
+
+        self._h1 = nn.Linear(n_input, n_features)
+        self._h2 = nn.Linear(n_features, n_features)
+        self._h3 = nn.Linear(n_features, n_output)
+
+        nn.init.xavier_uniform_(self._h1.weight,
+                                gain=nn.init.calculate_gain('relu'))
+        nn.init.xavier_uniform_(self._h2.weight,
+                                gain=nn.init.calculate_gain('relu'))
+        nn.init.xavier_uniform_(self._h3.weight,
+                                gain=nn.init.calculate_gain('linear'))
+
+    def forward(self, state, action):
+        state_action = torch.cat((state.float(), action.float()), dim=1)
+        features1 = F.relu(self._h1(state_action))
+        features2 = F.relu(self._h2(features1))
+        q = self._h3(features2)
+
+        return torch.squeeze(q)
+
+
+class ActorNetwork(nn.Module):
+    def __init__(self, input_shape, output_shape, n_features, **kwargs):
+        super(ActorNetwork, self).__init__()
+
+        n_input = input_shape[-1]
+        n_output = output_shape[0]
+
+        self._h1 = nn.Linear(n_input, n_features)
+        self._h2 = nn.Linear(n_features, n_features)
+        self._h3 = nn.Linear(n_features, n_output)
+
+        nn.init.xavier_uniform_(self._h1.weight,
+                                gain=nn.init.calculate_gain('relu'))
+        nn.init.xavier_uniform_(self._h2.weight,
+                                gain=nn.init.calculate_gain('relu'))
+        nn.init.xavier_uniform_(self._h3.weight,
+                                gain=nn.init.calculate_gain('linear'))
+
+    def forward(self, state):
+        features1 = F.relu(self._h1(torch.squeeze(state, 1).float()))
+        features2 = F.relu(self._h2(features1))
+        a = self._h3(features2)
+
+        return a
 
 
 def experiment(alg):
@@ -26,10 +72,10 @@ def experiment(alg):
     # MDP
     horizon = 1000
     gamma = 0.99
-    mdp = DMControl('quadruped', 'walk', horizon, gamma, use_pixels=False)
+    mdp = DMControl('walker', 'walk', horizon, gamma, use_pixels=False)
 
     # Agent
-    agent = Agent.load("checkpoint/quadruped_walk/sac_nomimal_exp_0_epoch_1940_0")
+    agent = Agent.load("src/nominal_models/walker/nominal_walker")
     # Algorithm
     core = Core(agent, mdp)
 

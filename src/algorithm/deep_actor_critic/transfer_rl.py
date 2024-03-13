@@ -65,7 +65,6 @@ class RLPolicy(Policy):
         self._add_save_attr(
             _mu_approximator='mushroom',
             _sigma_approximator='mushroom',
-            _discrete_approximator='mushroom',
             _max_a='numpy',
             _min_a='numpy',
             _delta_a='torch',
@@ -73,9 +72,7 @@ class RLPolicy(Policy):
             _log_std_min='mushroom',
             _log_std_max='mushroom',
             _eps_log_prob='primitive',
-            _temperature='torch',
-            _gauss_noise_cov='numpy',
-            _prior_policy='mushroom'
+            _gauss_noise_cov='numpy'
         )
 
     def __call__(self, state, action):
@@ -85,26 +82,12 @@ class RLPolicy(Policy):
         return self.compute_action_and_log_prob_t(
             state, compute_log_prob=False).detach().cpu().numpy()
 
-    def draw_deterministic_action(self, state):
-        # Continuous
-        cont_mu_raw = self._mu_approximator.predict(state, output_tensor=True)
-        a_cont = torch.tanh(cont_mu_raw)
-        a_cont_true = a_cont * self._delta_a + self._central_a
-        # Discrete
-        # NOTE: Discrete approximator takes both state and continuous action as input (sequential policy)
-        if isinstance(state, np.ndarray):
-            if self._mu_approximator.model.use_cuda:
-                state = torch.from_numpy(state).cuda()
-            else:
-                state = torch.from_numpy(state)
-        return a_cont_true.detach().cpu().numpy()
-
     def draw_noisy_action(self, state):
         # Add clipped gaussian noise (only to the continuous actions!)
         cont_noise = np.random.multivariate_normal(np.zeros(self._mu_approximator.output_shape[0]), np.eye(
             self._mu_approximator.output_shape[0]) * self._gauss_noise_cov)
-        noise =cont_noise
-        return np.clip(self.compute_action_and_log_prob_t(state, compute_log_prob=False).detach().cpu().numpy() + noise, self._min_a, self._max_a)
+        action = self.compute_action_and_log_prob_t(state, compute_log_prob=False).detach().cpu().numpy()
+        return np.clip(action + cont_noise, self._min_a, self._max_a)
 
     def compute_action_and_log_prob(self, state):
         """
@@ -137,22 +120,18 @@ class RLPolicy(Policy):
 
         """
         # Continuous
-
         cont_dist = self.cont_distribution(state)
-        # cont_dist_1 = self._prior_policy.cont_distribution(state)
-
         a_cont_raw = cont_dist.rsample()
         a_cont = torch.tanh(a_cont_raw)
         a_cont_true = a_cont * self._delta_a + self._central_a
 
-        # a_prior = self._prior_policy.compute_action_and_log_prob_t(state, compute_log_prob=False)
 
-        # a_cont_true_2 = (a_prior + a_cont_true)/2
+
         if compute_log_prob:
             # Continuous
             log_prob_cont = cont_dist.log_prob(a_cont_raw).sum(dim=1)
             log_prob_cont -= torch.log(1. - a_cont.pow(2) + self._eps_log_prob).sum(dim=1)
-
+            # Discrete
             return a_cont_true, log_prob_cont
         else:
             return a_cont_true
@@ -196,14 +175,7 @@ class RLPolicy(Policy):
         return torch.mean(cont_distr.entropy()).detach().cpu().numpy().item()
 
     def reset(self):
-        for layer in self._mu_approximator.model.network.children():
-            if hasattr(layer, 'reset_parameters'):
-                layer.reset_parameters()
-        for layer in   self._sigma_approximator.model.network.children():
-            if hasattr(layer, 'reset_parameters'):
-                layer.reset_parameters()
-
-
+        pass
 
     def set_weights(self, weights):
         """
@@ -254,7 +226,7 @@ class RLPolicy(Policy):
                      self._sigma_approximator.model.network.parameters())
 
 
-class TransferRl(DeepAC):
+class TransferRL(DeepAC):
     """
     BHyRL with a Hybrid action space (A sequential discrete approximator takes as input the
     continous action and outputs the discrete part of the action)
@@ -264,8 +236,12 @@ class TransferRl(DeepAC):
     def __init__(self, mdp_info, actor_mu_params, actor_sigma_params,
                  actor_optimizer, critic_params, batch_size,
                  initial_replay_size, max_replay_size, warmup_transitions, tau,
-                 lr_alpha, log_std_min=-3, log_std_max=2, use_entropy=False, target_entropy=None,
-                 gauss_noise_cov=0.01, critic_fit_params=None, update_freq=1):
+                 lr_alpha, log_std_min=-3,
+                 log_std_max=2,
+                 use_entropy=False,
+                 target_entropy=None,
+                 gauss_noise_cov=0.01,
+                 critic_fit_params=None):
         """
         Constructor.
 
@@ -274,6 +250,7 @@ class TransferRl(DeepAC):
                 to build;
             actor_sigma_params (dict): parameters of the actor sigma
                 approximator to build;
+            actor_discrete_params (dict): parameters of the actor discrete distribution
                 approximator to build;
             actor_optimizer (dict): parameters to specify the actor
                 optimizer algorithm;
@@ -300,13 +277,10 @@ class TransferRl(DeepAC):
 
         """
         self._critic_fit_params = dict() if critic_fit_params is None else critic_fit_params
-        self._update_freq = update_freq
+
         self._batch_size = to_parameter(batch_size)
         self._warmup_transitions = to_parameter(warmup_transitions)
         self._tau = to_parameter(tau)
-        self._Q = []
-        self._rho = [0]
-        self._old_Q =[]
 
         if target_entropy is None:
             self._target_entropy = -np.prod(mdp_info.action_space.shape).astype(np.float32)
@@ -327,7 +301,6 @@ class TransferRl(DeepAC):
         self._target_critic_approximator = Regressor(TorchApproximator,
                                                      **target_critic_params)
 
-        self._boosting = False  # default. Will be set if setup_boosting is called
 
         self._state_dim = actor_mu_params['input_shape'][
             0]  # Store state dimensions for help in boosting (change in state spaces)
@@ -388,69 +361,52 @@ class TransferRl(DeepAC):
             use_kl_on_pi (bool): Whether to use a kl between the prior task policy and the new policy as a loss on the policy
             kl_on_pi_alpha (float): Alpha parameter to weight the KL divergence loss on the policy
         """
-        # self._boosting = True
         self._prior_critic_approximators = list()
         self._prior_policies = list()
         self._prior_state_dims = list()
+
         for prior_agent in prior_agents:
             self._prior_critic_approximators.append(
                 prior_agent._target_critic_approximator)  # The target_critic_approximator object from agents trained on prior tasks
             self._prior_policies.append(prior_agent.policy)  # The policy object from an agent trained on a prior task
-            self._prior_state_dims.append(prior_agent._state_dim)
+            # self._prior_state_dims.append(prior_agent._state_dim)
 
-        self.policy.set_weights(self._prior_policies[-1].get_weights())
+
         for i in range(2):
             self._target_critic_approximator[i].set_weights(prior_agents[-1]._target_critic_approximator[i].get_weights())
             self._critic_approximator[i].set_weights(prior_agents[-1]._critic_approximator[i].get_weights())
 
     def fit(self, dataset):
-
         self._replay_memory.add(dataset)
-        for _ in range(self._update_freq):
-            if self._replay_memory.initialized:
-                state, action, reward, next_state, absorbing, _ = self._replay_memory.get(self._batch_size())
+        if self._replay_memory.initialized:
+            state, action, reward, next_state, absorbing, _ = \
+                self._replay_memory.get(self._batch_size())
 
-                if self._replay_memory.size > self._warmup_transitions():
-                    action_new, log_prob = self.policy.compute_action_and_log_prob_t(state)
-                    loss = self._loss(state, action_new, log_prob)
-                    self._optimize_actor_parameters(loss)
-                    if self._use_entropy:
-                        self._update_alpha(log_prob.detach())
-                    self._actor_last_loss = loss.detach().cpu().numpy()  # Store actor loss for logging
+            if self._replay_memory.size > self._warmup_transitions():
+                action_new, log_prob = self.policy.compute_action_and_log_prob_t(state)
+                loss = self._loss(state, action_new, log_prob)
+                self._optimize_actor_parameters(loss)
+                if self._use_entropy:
+                    self._update_alpha(log_prob.detach())
+                self._actor_last_loss = loss.detach().cpu().numpy()  # Store actor loss for logging
 
-                q_next = self._next_q(next_state, absorbing)
-                q = reward + self.mdp_info.gamma * q_next
-
-                self._Q.append(q.copy().mean())
-                old_q = np.zeros(q.shape)
-
-                for idx, prior_critic in enumerate(self._prior_critic_approximators):
-                    # # Fitting a 'residual q' i.e 'rho'. So we subtract the prior_rho values
-                    # Use prior rho values. Also use appropriate state-spaces as per the prior task
-                    prior_state = state[:, 0:self._prior_state_dims[idx]]
-                    rho_prior = prior_critic.predict(prior_state, action, prediction='min')
-                    old_q += rho_prior.copy()
-
-                self._old_Q.append(old_q.copy().mean())
-
-                self._critic_approximator.fit(state, action, q,
-                                              **self._critic_fit_params)
-
-                self._update_target(self._critic_approximator,
-                                    self._target_critic_approximator)
-
-    def _reset_critic(self):
-        for i in range(len(self._critic_approximator)):
-
-            for layer in self._critic_approximator[i].network.children():
-                if hasattr(layer, 'reset_parameters'):
-                    layer.reset_parameters()
-
-            for layer in self._target_critic_approximator[i].network.children():
-                if hasattr(layer, 'reset_parameters'):
-                    layer.reset_parameters()
+            q_next = self._next_q(next_state, absorbing)
+            q = reward + self.mdp_info.gamma * q_next
 
 
+            for idx, prior_critic in enumerate(self._prior_critic_approximators):
+                # # Fitting a 'residual q' i.e 'rho'. So we subtract the prior_rho values
+                # Use prior rho values. Also use appropriate state-spaces as per the prior task
+                # prior_state = state[:, 0:self._prior_state_dims[idx]]
+                prior_state = state
+                rho_prior = prior_critic.predict(prior_state, action, prediction='min')
+
+
+            self._critic_approximator.fit(state, action, q,
+                                          **self._critic_fit_params)
+
+            self._update_target(self._critic_approximator,
+                                self._target_critic_approximator)
 
     def _loss(self, state, action_new, log_prob):
         rho_0 = self._critic_approximator(state, action_new,
@@ -488,7 +444,6 @@ class TransferRl(DeepAC):
 
         q = self._target_critic_approximator.predict(
             next_state, a, prediction='min')
-
 
         if self._use_entropy:
             q -= self._alpha_np * log_prob_next

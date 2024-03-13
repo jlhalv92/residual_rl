@@ -2,7 +2,7 @@ critic:
   network_class: CriticNetwork
   params:
     n_features: 256
-    lr: 1e-4
+    lr: 3e-4
     critic_tau: 0.005
 
 actor:
@@ -19,6 +19,6 @@ model:
   actor_cfg: ${actor}
   params:
     device: ${device}
-    alpha_lr: 1e-4
+    alpha_lr: 3e-4
     batch_size: 256
 

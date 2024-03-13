@@ -43,11 +43,19 @@ class DMControl(Environment):
         self.env = suite.load(domain_name, task_name, task_kwargs=task_kwargs)
         random_rgb = np.random.rand(3)
         self.env.physics.named.model.geom_rgba['torso', :3] = random_rgb
+        print("torso mass: ", self.env.physics.named.model.body_mass['torso'])
         # self.env.physics.named.model.geom_rgba['left_foot', :3] = random_rgb
         # self.env.physics.named.model.body_mass['torso'] = self.env.physics.named.model.body_mass['torso'].copy()*2
         # # self.env.physics.named.model.body_mass['left_foot'] = 40.
         # # self.env.physics.named.model.geom_size["right_thigh"] = [0.05,  0.065, 0.]
-        print(self.env.physics.named.model.body_mass['torso'])
+        print(self.env.physics.named.model.geom_friction['left_foot'])
+        # self.env.physics.named.model.geom_friction['left_foot'] = 3*[.001]
+        # self.env.physics.named.model.geom_friction['right_foot'] =3*[.001]
+
+        # self.env.physics.named.model.geom_friction['floor'] =3*[.001]
+
+
+
         # print(self.env.physics.named.model.body_mass['right_foot'])
 
 

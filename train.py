@@ -7,9 +7,10 @@ import torch.optim as optim
 import torch.nn.functional as F
 # from src.algorithm.deep_actor_critic.boosted_rl import BRL,BRLReset
 from mushroom_rl.algorithms.actor_critic.deep_actor_critic import SAC
+from src.algorithm.deep_actor_critic.residual_rl import ResidualRL
 from mushroom_rl.core import Logger
-from src.core.core import Core
-from mushroom_rl.environments.dm_control_env import DMControl
+from src.core.core_residual import Core
+from src.envs.dm_control_env import DMControl
 from mushroom_rl.utils.dataset import compute_J, parse_dataset
 import wandb
 from src.networks.networks import ActorNetwork, CriticNetwork
@@ -96,6 +97,11 @@ def experiment(alg, experiment_id, cfg=None):
                 log_std_max=cfg.agent.actor.params.log_std_bounds[1],
                 critic_fit_params=None)
 
+    if cfg.agent.model.name == "residual":
+
+        old_agent = Agent.load(cfg.agent.old_model_path)
+        agent.setup_boosting([old_agent], use_kl_on_pi=True)
+
     # agent =Agent.load("checkpoint/quadruped_walk/sac_nomimal_exp_0_epoch_1999_3")
 
 
@@ -106,18 +112,20 @@ def experiment(alg, experiment_id, cfg=None):
     core.learn(n_steps=initial_replay_size, n_steps_per_fit=initial_replay_size)
 
     for n in trange(n_epochs, leave=False):
-
         core.learn(n_steps=n_steps, n_steps_per_fit=1)
-
         dataset = core.evaluate(n_episodes=n_episodes_test, render=False)
         s, *_ = parse_dataset(dataset)
 
         J = np.mean(compute_J(dataset, mdp.info.gamma))
         R = np.mean(compute_J(dataset))
         E = agent.policy.entropy(s)
-
-        logger.epoch_info(n, J=J, R=R, entropy=E)
+        kl = np.mean(agent._kl_with_prior_list)
+        logger.epoch_info(n, J=J, R=R, entropy=E, Q=np.mean(agent._Q), old_Q=np.mean(agent._old_Q), rho=np.mean(agent._rho), kl=kl)
         logs_dict = {"RETURN": J, "REWARD": R, "Entropy":E}
+        agent._Q = []
+        agent._old_Q = []
+        agent._rho = []
+        agent._kl_with_prior_list = []
         if logging:
             wandb.log(logs_dict, step=n)
 
@@ -138,7 +146,7 @@ def run_exp(cfg: DictConfig):
 def main(cfg: DictConfig = None):
 
     alg_map = {"sac": SAC,  # Mappings from strings to algorithms
-                "BRL": None}
+                "residual": ResidualRL}
 
     alg = alg_map[cfg.agent.model.name]
     for experiment_id in range(cfg.seeds):

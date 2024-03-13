@@ -4,16 +4,17 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
-from src.algorithm.deep_actor_critic.boosted_rl import BRL
+from src.algorithm.deep_actor_critic.residual_rl import ResidualRL
 from mushroom_rl.algorithms.actor_critic import SAC
 from mushroom_rl.core import Core, Logger
-from mushroom_rl.environments.dm_control_env import DMControl
+from src.envs.dm_control_env import DMControl
 from mushroom_rl.utils.dataset import compute_J, parse_dataset
-from src.networks.networks import CriticNetwork, ActorNetwork
+from src.networks.networks import CriticNetwork, ActorNetwork, Q1full
 from tqdm import trange
+import wandb
 
 
-def experiment(alg, n_epochs, n_steps, n_episodes_test):
+def experiment(alg, n_epochs, n_steps, n_episodes_test, run_id):
     np.random.seed()
 
     logger = Logger(alg.__name__, results_dir=None)
@@ -23,19 +24,26 @@ def experiment(alg, n_epochs, n_steps, n_episodes_test):
     # MDP
     horizon = 500
     gamma = 0.99
-    mdp = DMControl('hopper', 'hop', horizon, gamma, use_pixels=False)
+    mdp = DMControl('walker', 'walk', horizon, gamma, use_pixels=False)
+    log = True
+    if log:
+        wandb.init(
+            # set the wandb project where this run will be logged
+            project="walker_walk_comparison",
+            name="BigResidual_kl"
+        )
 
     # Settings
-    initial_replay_size = 10000
+    initial_replay_size = 0.01*n_steps*n_epochs
     max_replay_size = n_steps*n_epochs
-    print(max_replay_size)
-    batch_size = 256
+    batch_size = 400
     n_features = 400
-    warmup_transitions = 12000
+    # warmup_transitions = 0.03*n_steps*n_epochs
+    warmup_transitions = 0.015*n_steps*n_epochs
     tau = 0.005
     lr_alpha = 3e-4
 
-    use_cuda = torch.cuda.is_available()
+    use_cuda = True
 
     # Approximator
     actor_input_shape = mdp.info.observation_space.shape
@@ -54,7 +62,7 @@ def experiment(alg, n_epochs, n_steps, n_episodes_test):
                        'params': {'lr': 3e-4}}
 
     critic_input_shape = (actor_input_shape[0] + mdp.info.action_space.shape[0],)
-    critic_params = dict(network=CriticNetwork,
+    critic_params = dict(network=Q1full,
                          optimizer={'class': optim.Adam,
                                     'params': {'lr': 3e-4}},
                          loss=F.mse_loss,
@@ -70,7 +78,12 @@ def experiment(alg, n_epochs, n_steps, n_episodes_test):
                 log_std_min=-3, log_std_max=2, target_entropy=None, critic_fit_params=None)
 
     # Algorithm
+    boosting = True
     core = Core(agent, mdp)
+    if boosting:
+        old_agent = alg.load("src/nominal_models/walker/nominal_walker")
+
+        agent.setup_residual(prior_agents=[old_agent],use_kl_on_pi=True, kl_on_pi_alpha=1e-3)
 
     # RUN
     dataset = core.evaluate(n_steps=n_episodes_test, render=False)
@@ -84,7 +97,6 @@ def experiment(alg, n_epochs, n_steps, n_episodes_test):
 
     core.learn(n_steps=initial_replay_size, n_steps_per_fit=initial_replay_size)
 
-
     for n in trange(n_epochs, leave=False):
         core.learn(n_steps=n_steps, n_steps_per_fit=1)
         dataset = core.evaluate(n_episodes=n_episodes_test, render=False)
@@ -95,16 +107,18 @@ def experiment(alg, n_epochs, n_steps, n_episodes_test):
         E = agent.policy.entropy(s)
 
         logger.epoch_info(n+1, J=J, R=R, entropy=E)
+        logs_dict = {"RETURN": J, "REWARD": R}
+        if log:
+            wandb.log(logs_dict, step=n)
 
     # logger.info('Press a button to visualize pendulum')
     # input()
     # core.evaluate(n_episodes=5, render=True)
-    agent.save("checkpoint/nominal_hopper")
+    agent.save("checkpoint/BigResidual_kl_comparison{}".format(run_id))
+    wandb.finish()
 
 if __name__ == '__main__':
-    algs = [
-        SAC
-    ]
 
-    for alg in algs:
-        experiment(alg=alg, n_epochs=100, n_steps=5000, n_episodes_test=4)
+
+    for i in range(5):
+        experiment(alg=ResidualRL, n_epochs=50, n_steps=5000, n_episodes_test=10, run_id=i)
