@@ -25,12 +25,12 @@ def experiment(alg, n_epochs, n_steps, n_episodes_test, run_id):
     # MDP
     horizon = 500
     gamma = 0.99
-    mdp = DMControl('walker', 'walk', horizon, gamma, use_pixels=False)
+    mdp = DMControl('walker', 'run', horizon, gamma, use_pixels=False)
     log = True
     if log:
         wandb.init(
             # set the wandb project where this run will be logged
-            project="heavy_body_walker_walk",
+            project="walker_run_comparison",
             name="restnetBoostResidual_unfreeze_kl_0.03"
         )
 

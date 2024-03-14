@@ -9,7 +9,7 @@ from mushroom_rl.algorithms.actor_critic import SAC
 from mushroom_rl.core import Core, Logger
 from src.envs.dm_control_env import DMControl
 from mushroom_rl.utils.dataset import compute_J, parse_dataset
-from src.networks.networks import CriticNetwork, ActorNetwork, QRES
+from src.networks.networks import CriticNetwork, ActorNetwork, QRESBIG
 from tqdm import trange
 import wandb
 from joblib import Parallel, delayed
@@ -25,13 +25,17 @@ def experiment(alg, n_epochs, n_steps, n_episodes_test, run_id):
     # MDP
     horizon = 500
     gamma = 0.99
-    mdp = DMControl('walker', 'walk', horizon, gamma, use_pixels=False)
+    mdp = DMControl('walker',
+                    'run',
+                    horizon,
+                    gamma,
+                    use_pixels=False)
     log = True
     if log:
         wandb.init(
             # set the wandb project where this run will be logged
-            project="heavy_body_walker_walk",
-            name="restnetResidual_kl"
+            project="walker_run_comparison",
+            name="resnetResidual_BIG_net_kl"
         )
 
     # Settings
@@ -64,7 +68,7 @@ def experiment(alg, n_epochs, n_steps, n_episodes_test, run_id):
                        'params': {'lr': 3e-4}}
 
     critic_input_shape = (actor_input_shape[0] + mdp.info.action_space.shape[0],)
-    critic_params = dict(network=QRES,
+    critic_params = dict(network=QRESBIG,
                          optimizer={'class': optim.Adam,
                                     'params': {'lr': 3e-4}},
                          loss=F.mse_loss,
@@ -85,7 +89,10 @@ def experiment(alg, n_epochs, n_steps, n_episodes_test, run_id):
     if boosting:
         old_agent = alg.load("src/nominal_models/walker/nominal_walker")
 
-        agent.setup_residual(prior_agents=[old_agent], use_kl_on_pi=True,kl_on_pi_alpha=0.03, copy_weights=True)
+        agent.setup_residual(prior_agents=[old_agent],
+                             use_kl_on_pi=True,
+                             kl_on_pi_alpha=0.08,
+                             copy_weights=True)
 
     # RUN
     dataset = core.evaluate(n_steps=n_episodes_test, render=False)
@@ -123,7 +130,7 @@ def experiment(alg, n_epochs, n_steps, n_episodes_test, run_id):
     # logger.info('Press a button to visualize pendulum')
     # input()
     # core.evaluate(n_episodes=5, render=True)
-    agent.save("checkpoint/restnetResidual_heavyload_{}".format(run_id))
+    agent.save("checkpoint/restnetResidual_big_run_KL_{}".format(run_id))
     wandb.finish()
 
 if __name__ == '__main__':
@@ -132,16 +139,16 @@ if __name__ == '__main__':
     # logger.strong_line()
     # for i in range(5):
     #     experiment(alg=ResnetResidualRL, n_epochs=50, n_steps=5000, n_episodes_test=10, run_id=i)
-    # for i in range(5):
-    n_experiment = 5
-        # experiment(alg=ResnetResidualRL, n_epochs=150, n_steps=5000, n_episodes_test=10, run_id=i)
+    for i in range(5):
+    # n_experiment = 5
+        experiment(alg=ResnetResidualRL, n_epochs=50, n_steps=5000, n_episodes_test=10, run_id=i)
     # Parallel(n_jobs=5)()
     # for x in range(5):
     #
     #     for y in range(6):
-    out = Parallel(n_jobs=-1)(delayed(experiment)(alg=ResnetResidualRL,
-                                                  n_epochs=150,
-                                                  n_steps=5000,
-                                                  n_episodes_test=10,
-                                                  run_id=experiment_id) for experiment_id in range(n_experiment))
+    # out = Parallel(n_jobs=-1)(delayed(experiment)(alg=ResnetResidualRL,
+    #                                               n_epochs=50,
+    #                                               n_steps=5000,
+    #                                               n_episodes_test=10,
+    #                                               run_id=experiment_id) for experiment_id in range(n_experiment))
 

@@ -24,10 +24,10 @@ def experiment(alg, n_epochs, n_steps, n_episodes_test, run_id):
     # MDP
     horizon = 500
     gamma = 0.99
-    mdp = DMControl('walker', 'walk', horizon, gamma, use_pixels=False)
+    mdp = DMControl('walker', 'run', horizon, gamma, use_pixels=False)
     wandb.init(
         # set the wandb project where this run will be logged
-        project="walker_walk_comparison",
+        project="walker_run_comparison",
         name="transfer"
     )
 
@@ -75,12 +75,12 @@ def experiment(alg, n_epochs, n_steps, n_episodes_test, run_id):
                 log_std_min=-3, log_std_max=2, target_entropy=None, critic_fit_params=None)
 
     # Algorithm
-    boosting = True
-    core = Core(agent, mdp)
-    if boosting:
-        old_agent = alg.load("src/nominal_models/walker/nominal_walker")
 
-        agent.setup_transfer(prior_agents=[old_agent])
+    core = Core(agent, mdp)
+
+    old_agent = alg.load("src/nominal_models/walker/nominal_walker")
+
+    agent.setup_transfer(prior_agents=[old_agent])
 
     # RUN
     dataset = core.evaluate(n_steps=n_episodes_test, render=False)
@@ -110,7 +110,7 @@ def experiment(alg, n_epochs, n_steps, n_episodes_test, run_id):
     # logger.info('Press a button to visualize pendulum')
     # input()
     # core.evaluate(n_episodes=5, render=True)
-    agent.save("checkpoint/transfer_comparison_{}".format(run_id))
+    agent.save("checkpoint/transfer_comparison_RUN_{}".format(run_id))
     wandb.finish()
 
 if __name__ == '__main__':
