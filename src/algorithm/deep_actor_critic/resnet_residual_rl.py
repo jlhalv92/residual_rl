@@ -368,8 +368,7 @@ class ResnetResidualRL(DeepAC):
         self._prior_state_dims = list()
         self._boosting = True
 
-        if use_policy:
-            self.transfer_policy_parameters(self._prior_policies[-1], self.policy)
+
 
         if copy_weights:
             self.copy_weights_critic(prior_agents[-1]._target_critic_approximator, self._target_critic_approximator)
@@ -381,6 +380,10 @@ class ResnetResidualRL(DeepAC):
                 prior_agent._target_critic_approximator)  # The target_critic_approximator object from agents trained on prior tasks
             self._prior_policies.append(prior_agent.policy)  # The policy object from an agent trained on a prior task
             # self._prior_state_dims.append(prior_agent._state_dim)
+
+
+        if use_policy:
+            self.transfer_policy_parameters(self._prior_policies[-1], self.policy)
 
         self._use_kl_on_pi = use_kl_on_pi  # Whether to use a kl between the prior task policy and the new policy as a loss for the new policy
         self._kl_on_pi_alpha = kl_on_pi_alpha  # Alpha parameter to weight the KL divergence loss on the policy
