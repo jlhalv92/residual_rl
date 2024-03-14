@@ -16,7 +16,7 @@ from joblib import Parallel, delayed
 import time
 
 
-def experiment(alg, n_epochs, n_steps, n_episodes_test, run_id, target_speed, residuals, reference_epoch, curriculum_id):
+def experiment(alg, n_epochs, n_steps, n_episodes_test, run_id, target_speed, residuals, reference_epoch, curriculum_id, stop_log):
     np.random.seed()
 
     logger = Logger(alg.__name__, results_dir=None)
@@ -37,8 +37,8 @@ def experiment(alg, n_epochs, n_steps, n_episodes_test, run_id, target_speed, re
     if log:
         wandb.init(
             # set the wandb project where this run will be logged
-            project="heavy_body_walker_walk",
-            name="resnetResidual_no_kl"
+            project="walker_run_comparison",
+            name="residual_resnet_curriculum_policy"
         )
 
     # Settings
@@ -97,10 +97,14 @@ def experiment(alg, n_epochs, n_steps, n_episodes_test, run_id, target_speed, re
         for r_path in residuals:
             old_agents.append(alg.load(r_path))
 
+        use_policy = False
+        if curriculum_id > 0:
+            use_policy = True
         agent.setup_residual(prior_agents=old_agents,
                              use_kl_on_pi=False,
                              kl_on_pi_alpha=0.08,
-                             copy_weights=True)
+                             copy_weights=True,
+                             use_policy=use_policy)
 
     # RUN
     dataset = core.evaluate(n_steps=n_episodes_test, render=False)
@@ -139,7 +143,8 @@ def experiment(alg, n_epochs, n_steps, n_episodes_test, run_id, target_speed, re
     # input()
     # core.evaluate(n_episodes=5, render=True)
     agent.save("checkpoint/walker_rho_{}_{}".format(curriculum_id, run_id))
-    wandb.finish()
+    if stop_log:
+        wandb.finish()
 
 if __name__ == '__main__':
 
@@ -152,9 +157,13 @@ if __name__ == '__main__':
         residuals = ["src/nominal_models/walker/nominal_walker"]
         target_speed_list = [3., 5., 8.]
         epochs = [15, 15, 20]
+        ref_epochs = [0, 15, 30]
         rhos = ["checkpoint/walker_rho_{}_{}".format(j, i) for j in range(2)]
         residuals.extend(rhos)
+        stop_log = False
         for j in range(len(target_speed_list)):
+            if j > 1:
+                stop_log = True
             experiment(alg=ResnetResidualRL,
                        n_epochs=epochs[j],
                        n_steps=5000,
@@ -162,8 +171,9 @@ if __name__ == '__main__':
                        run_id=i,
                        residuals=residuals[:j+1],
                        target_speed=target_speed_list[i],
-                       reference_epoch=epochs[j]*j,
-                       curriculum_id=j)
+                       reference_epoch=ref_epochs[j],
+                       curriculum_id=j,
+                       stop_log=stop_log)
     # Parallel(n_jobs=5)()
     # for x in range(5):
     #

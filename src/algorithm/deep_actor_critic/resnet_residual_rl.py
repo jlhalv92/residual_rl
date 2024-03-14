@@ -357,7 +357,7 @@ class ResnetResidualRL(DeepAC):
 
         super().__init__(mdp_info, policy, actor_optimizer, policy_parameters)
 
-    def setup_residual(self, prior_agents, use_kl_on_pi=False, kl_on_pi_alpha=1e-3, copy_weights=False):
+    def setup_residual(self, prior_agents, use_kl_on_pi=False, kl_on_pi_alpha=1e-3, copy_weights=False, use_policy=False):
         """
             prior_agents ([mushroom object list]): The agent object from agents trained on prior tasks;
             use_kl_on_pi (bool): Whether to use a kl between the prior task policy and the new policy as a loss on the policy
@@ -367,6 +367,9 @@ class ResnetResidualRL(DeepAC):
         self._prior_policies = list()
         self._prior_state_dims = list()
         self._boosting = True
+
+        if use_policy:
+            self.transfer_policy_parameters(self._prior_policies[-1], self.policy)
 
         if copy_weights:
             self.copy_weights_critic(prior_agents[-1]._target_critic_approximator, self._target_critic_approximator)
@@ -387,6 +390,12 @@ class ResnetResidualRL(DeepAC):
         # for i in range(2):
         #     self._target_critic_approximator[i].set_weights(prior_agents[-1]._target_critic_approximator[i].get_weights())
         #     self._critic_approximator[i].set_weights(prior_agents[-1]._critic_approximator[i].get_weights())
+
+
+    def transfer_policy_parameters(self, source_model, target_model):
+
+        target_model._mu_approximator.model.network.load_state_dict(source_model._mu_approximator.model.network.state_dict())
+        target_model._sigma_approximator.model.network.load_state_dict(source_model._sigma_approximator.model.network.state_dict())
 
     def copy_weights_critic(self, old_critic, current_critic):
         for i in range(len(old_critic)):
