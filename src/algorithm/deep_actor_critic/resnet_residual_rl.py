@@ -389,7 +389,6 @@ class ResnetResidualRL(DeepAC):
         #     self._critic_approximator[i].set_weights(prior_agents[-1]._critic_approximator[i].get_weights())
 
     def copy_weights_critic(self, old_critic, current_critic):
-
         for i in range(len(old_critic)):
             new_state_dict = current_critic[i].network.state_dict()
             old_state_dict = old_critic[i].network.state_dict()
@@ -405,6 +404,12 @@ class ResnetResidualRL(DeepAC):
                 if name in keys:
                     param.requires_grad = False
 
+    def unfreeze_network(self):
+        for i in range(len(self._target_critic_approximator)):
+            for name, param in self._critic_approximator[i].network.named_parameters():
+                param.requires_grad = True
+            for name, param in self._target_critic_approximator[i].network.named_parameters():
+                param.requires_grad = True
 
     def fit(self, dataset):
         self._replay_memory.add(dataset)
