@@ -24,15 +24,42 @@ class ResidualBlock2(nn.Module):
 
     def forward(self, value, state, action):
         state_action_value = torch.cat((state.float(), action.float(), value.float()), dim=1)
-        Q = value
+        identity = value
         features1 = F.relu(self.layer_1(state_action_value))
         features2 = F.relu(self.layer_2(features1))
         features3 = F.relu(self.layer_3(features2))
         rho1 = self.layer_out(features3)
-        Q += rho1
+        rho1 += identity
+        return rho1
 
-        return Q
 
+class ResidualBlockNoQ(nn.Module):
+    def __init__(self, n_features, n_input, n_output,  **kwargs):
+        super(ResidualBlockNoQ, self).__init__()
+
+        self.layer_1 = nn.Linear(n_input, n_features)
+        self.layer_2 = nn.Linear(n_features, n_features)
+        self.layer_3 = nn.Linear(n_features, n_features)
+        self.layer_out = nn.Linear(n_features, n_output)
+
+        nn.init.xavier_uniform_(self.layer_1.weight,
+                                gain=nn.init.calculate_gain('relu'))
+        nn.init.xavier_uniform_(self.layer_2.weight,
+                                gain=nn.init.calculate_gain('relu'))
+        nn.init.xavier_uniform_(self.layer_3.weight,
+                                gain=nn.init.calculate_gain('relu'))
+        nn.init.xavier_uniform_(self.layer_out.weight,
+                                gain=nn.init.calculate_gain('linear'))
+
+    def forward(self, value, state, action):
+        state_action = torch.cat((state.float(), action.float()), dim=1)
+        identity = value
+        features1 = F.relu(self.layer_1(state_action))
+        features2 = F.relu(self.layer_2(features1))
+        features3 = F.relu(self.layer_3(features2))
+        rho1 = self.layer_out(features3)
+        rho1 += identity
+        return rho1
 
 class ResidualBlockNoMagic(nn.Module):
     def __init__(self, n_features, n_input, n_output,  **kwargs):
@@ -209,7 +236,6 @@ class QRESLIM(nn.Module):
 
         n_input = input_shape[-1]
         n_output = output_shape[0]
-
         self._in = nn.Linear(n_input, n_features)
         self._h1 = nn.Linear(n_features, n_features)
         self._h2 = nn.Linear(n_features, n_features)
@@ -222,7 +248,7 @@ class QRESLIM(nn.Module):
         # nn.init.xavier_uniform_(self._h2.weight, gain=nn.init.calculate_gain("relu"))
         # nn.init.xavier_uniform_(self._out.weight, gain=nn.init.calculate_gain("linear"))
 
-    def forward(self, state, action):
+    def forward(self, state, action, old_q=False, rho=False):
         state_action = torch.cat((state.float(), action.float()), dim=1)
 
         features1 = F.relu(self._in(state_action))
@@ -230,6 +256,44 @@ class QRESLIM(nn.Module):
         features3 = F.relu(self._h2(features2))
         q_0 = self._out(features3)
         q = self._rho_0(q_0, state, action)
+
+        if old_q:
+            return torch.squeeze(q_0)
+        if rho:
+            return torch.squeeze(q-q_0)
+
+        return torch.squeeze(q)
+
+
+class QRESNOQ(nn.Module):
+    def __init__(self, input_shape, output_shape, n_features, **kwargs):
+        super(QRESNOQ, self).__init__()
+
+        n_input = input_shape[-1]
+        n_output = output_shape[0]
+        self._in = nn.Linear(n_input, n_features)
+        self._h1 = nn.Linear(n_features, n_features)
+        self._h2 = nn.Linear(n_features, n_features)
+        self._out = nn.Linear(n_features, n_output)
+
+        self._rho_0 = ResidualBlockNoQ(n_features, n_input, n_output)
+
+
+    def forward(self, state, action, old_q=False, rho=False):
+        state_action = torch.cat((state.float(), action.float()), dim=1)
+
+        features1 = F.relu(self._in(state_action))
+        features2 = F.relu(self._h1(features1))
+        features3 = F.relu(self._h2(features2))
+        q_0 = self._out(features3)
+
+        q = self._rho_0(q_0, state, action)
+
+
+        if old_q:
+            return torch.squeeze(q_0)
+        if rho:
+            return torch.squeeze(q-q_0)
 
         return torch.squeeze(q)
 

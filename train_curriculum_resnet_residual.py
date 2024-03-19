@@ -31,14 +31,14 @@ def experiment(alg, n_epochs, n_steps, n_episodes_test, run_id, target_speed, re
                     horizon,
                     gamma,
                     use_pixels=False)
-    log = False
+    log = True
     mdp.env.task._move_speed = target_speed
 
     if log:
         wandb.init(
             # set the wandb project where this run will be logged
             project="walker_run_comparison",
-            name="residual_resnet_curriculum_policy"
+            name="residual_resnet_curriculum_3_steps_3_5_8_no_policy"
         )
 
     # Settings
@@ -98,16 +98,20 @@ def experiment(alg, n_epochs, n_steps, n_episodes_test, run_id, target_speed, re
             old_agents.append(alg.load(r_path))
 
         use_policy = False
+
         if curriculum_id > 0:
-            use_policy = True
+            use_policy = False
+
         agent.setup_residual(prior_agents=old_agents,
                              use_kl_on_pi=False,
                              kl_on_pi_alpha=0.08,
                              copy_weights=True,
                              use_policy=use_policy)
 
+
+
     # RUN
-    dataset = core.evaluate(n_steps=n_episodes_test, render=False)
+    dataset = core.evaluate(n_episodes=n_episodes_test, render=False)
     s, *_ = parse_dataset(dataset)
 
     J = np.mean(compute_J(dataset, mdp.info.gamma))
@@ -134,15 +138,15 @@ def experiment(alg, n_epochs, n_steps, n_episodes_test, run_id, target_speed, re
         agent._Q = []
         agent._rho = []
         agent._old_Q = []
-
         logs_dict = {"RETURN": J, "REWARD": R}
+
         if log:
             wandb.log(logs_dict, step=n+reference_epoch)
 
     # logger.info('Press a button to visualize pendulum')
     # input()
     # core.evaluate(n_episodes=5, render=True)
-    agent.save("checkpoint/walker_rho_{}_{}".format(curriculum_id, run_id))
+    agent.save("checkpoint/walker_rho_3_steps_no_policy_3_5_8_{}_{}".format(curriculum_id, run_id))
     if stop_log:
         wandb.finish()
 
@@ -158,11 +162,11 @@ if __name__ == '__main__':
         target_speed_list = [3., 5., 8.]
         epochs = [15, 15, 20]
         ref_epochs = [0, 15, 30]
-        rhos = ["checkpoint/walker_rho_{}_{}".format(j, i) for j in range(2)]
+        rhos = ["checkpoint/walker_rho_3_steps_no_policy_3_5_8_{}_{}".format(j, i) for j in range(2)]
         residuals.extend(rhos)
         stop_log = False
         for j in range(len(target_speed_list)):
-            if j > 1:
+            if j == len(target_speed_list)-1:
                 stop_log = True
             experiment(alg=ResnetResidualRL,
                        n_epochs=epochs[j],
@@ -170,7 +174,7 @@ if __name__ == '__main__':
                        n_episodes_test=10,
                        run_id=i,
                        residuals=residuals[:j+1],
-                       target_speed=target_speed_list[i],
+                       target_speed=target_speed_list[j],
                        reference_epoch=ref_epochs[j],
                        curriculum_id=j,
                        stop_log=stop_log)

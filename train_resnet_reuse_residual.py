@@ -9,7 +9,8 @@ from mushroom_rl.algorithms.actor_critic import SAC
 from mushroom_rl.core import Core, Logger
 from src.envs.dm_control_env import DMControl
 from mushroom_rl.utils.dataset import compute_J, parse_dataset
-from src.networks.networks import CriticNetwork, ActorNetwork, QRESLIM
+from src.networks.networks import CriticNetwork, ActorNetwork
+from src.networks.reuse_net import QResnetReuse
 from tqdm import trange
 import wandb
 from joblib import Parallel, delayed
@@ -26,7 +27,7 @@ def experiment(alg, n_epochs, n_steps, n_episodes_test, run_id):
     horizon = 500
     gamma = 0.99
     mdp = DMControl('walker',
-                    'walk',
+                    'run',
                     horizon,
                     gamma,
                     use_pixels=False)
@@ -34,8 +35,8 @@ def experiment(alg, n_epochs, n_steps, n_episodes_test, run_id):
     if log:
         wandb.init(
             # set the wandb project where this run will be logged
-            project="walker_walk_comparison",
-            name="resnetResidual_walk_unfreeze"
+            project="walker_run_comparison",
+            name="resnet_reuse_residual"
         )
 
     # Settings
@@ -68,7 +69,7 @@ def experiment(alg, n_epochs, n_steps, n_episodes_test, run_id):
                        'params': {'lr': 3e-4}}
 
     critic_input_shape = (actor_input_shape[0] + mdp.info.action_space.shape[0],)
-    critic_params = dict(network=QRESLIM,
+    critic_params = dict(network=QResnetReuse,
                          optimizer={'class': optim.Adam,
                                     'params': {'lr': 3e-4}},
                          loss=F.mse_loss,
@@ -91,12 +92,11 @@ def experiment(alg, n_epochs, n_steps, n_episodes_test, run_id):
 
         agent.setup_residual(prior_agents=[old_agent],
                              use_kl_on_pi=False,
-                             kl_on_pi_alpha=0.1,
-                             copy_weights=True,
-                             unfreeze_weights=True)
+                             kl_on_pi_alpha=0.08,
+                             copy_weights=True)
 
     # RUN
-    dataset = core.evaluate(n_episodes=n_episodes_test, render=False)
+    dataset = core.evaluate(n_steps=n_episodes_test, render=False)
     s, *_ = parse_dataset(dataset)
 
     J = np.mean(compute_J(dataset, mdp.info.gamma))
@@ -118,13 +118,11 @@ def experiment(alg, n_epochs, n_steps, n_episodes_test, run_id):
         Q = np.mean(agent._Q)
         rho = np.mean(agent._rho)
         old_q = np.mean(agent._old_Q)
-        tuned_old_q =np.mean(agent._old_Q_tuned)
 
-        logger.epoch_info(n+1, J=J, R=R, entropy=E, q=Q, rho=rho, old_q=old_q, tuned_old_q=tuned_old_q)
+        logger.epoch_info(n+1, J=J, R=R, entropy=E, q=Q, rho=rho, old_q=old_q)
         agent._Q = []
         agent._rho = []
         agent._old_Q = []
-        agent._old_Q_tuned = []
 
         logs_dict = {"RETURN": J, "REWARD": R}
         if log:
@@ -133,7 +131,7 @@ def experiment(alg, n_epochs, n_steps, n_episodes_test, run_id):
     # logger.info('Press a button to visualize pendulum')
     # input()
     # core.evaluate(n_episodes=5, render=True)
-    agent.save("checkpoint/resnetResidual_unfreeze_walk_v2{}".format(run_id))
+    agent.save("checkpoint/resnet_reuse_residual_{}".format(run_id))
     wandb.finish()
 
 if __name__ == '__main__':

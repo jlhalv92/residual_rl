@@ -9,7 +9,7 @@ from mushroom_rl.algorithms.actor_critic import SAC
 from mushroom_rl.core import Core, Logger
 from src.envs.dm_control_env import DMControl
 from mushroom_rl.utils.dataset import compute_J, parse_dataset
-from src.networks.networks import CriticNetwork, ActorNetwork, Q1full
+from src.networks.networks import CriticNetwork, ActorNetwork
 from tqdm import trange
 import wandb
 
@@ -24,13 +24,15 @@ def experiment(alg, n_epochs, n_steps, n_episodes_test, run_id):
     # MDP
     horizon = 500
     gamma = 0.99
-    mdp = DMControl('walker', 'walk', horizon, gamma, use_pixels=False)
+    mdp = DMControl('walker', 'run', horizon, gamma, use_pixels=False)
+    mdp.env.task._move_speed = 3.
+
     log = True
     if log:
         wandb.init(
             # set the wandb project where this run will be logged
-            project="walker_walk_comparison",
-            name="big_Residual"
+            project="walker_run_comparison",
+            name="Residual_nets_seed_3"
         )
 
     # Settings
@@ -39,7 +41,7 @@ def experiment(alg, n_epochs, n_steps, n_episodes_test, run_id):
     batch_size = 400
     n_features = 400
     # warmup_transitions = 0.03*n_steps*n_epochs
-    warmup_transitions = 0.015*n_steps*n_epochs
+    warmup_transitions = 0.012*n_steps*n_epochs
     tau = 0.005
     lr_alpha = 3e-4
 
@@ -62,7 +64,7 @@ def experiment(alg, n_epochs, n_steps, n_episodes_test, run_id):
                        'params': {'lr': 3e-4}}
 
     critic_input_shape = (actor_input_shape[0] + mdp.info.action_space.shape[0],)
-    critic_params = dict(network=Q1full,
+    critic_params = dict(network=CriticNetwork,
                          optimizer={'class': optim.Adam,
                                     'params': {'lr': 3e-4}},
                          loss=F.mse_loss,
@@ -83,7 +85,8 @@ def experiment(alg, n_epochs, n_steps, n_episodes_test, run_id):
     if boosting:
         old_agent = alg.load("src/nominal_models/walker/nominal_walker")
 
-        agent.setup_residual(prior_agents=[old_agent],use_kl_on_pi=True, kl_on_pi_alpha=1e-3)
+        agent.setup_residual(prior_agents=[old_agent], use_kl_on_pi=False, kl_on_pi_alpha=1e-1)
+
 
     # RUN
     dataset = core.evaluate(n_steps=n_episodes_test, render=False)
@@ -105,8 +108,15 @@ def experiment(alg, n_epochs, n_steps, n_episodes_test, run_id):
         J = np.mean(compute_J(dataset, mdp.info.gamma))
         R = np.mean(compute_J(dataset))
         E = agent.policy.entropy(s)
+        Q = np.mean(agent._Q)
+        rho = np.mean(agent._rho)
+        old_q = np.mean(agent._old_Q)
 
-        logger.epoch_info(n+1, J=J, R=R, entropy=E)
+        logger.epoch_info(n+1, J=J, R=R, entropy=E, q=Q, rho=rho, old_q=old_q)
+        agent._Q = []
+        agent._rho = []
+        agent._old_Q = []
+
         logs_dict = {"RETURN": J, "REWARD": R}
         if log:
             wandb.log(logs_dict, step=n)
@@ -114,7 +124,7 @@ def experiment(alg, n_epochs, n_steps, n_episodes_test, run_id):
     # logger.info('Press a button to visualize pendulum')
     # input()
     # core.evaluate(n_episodes=5, render=True)
-    agent.save("checkpoint/BigResidual_kl_comparison{}".format(run_id))
+    agent.save("checkpoint/Residual_nets_seed_3_{}".format(run_id))
     wandb.finish()
 
 if __name__ == '__main__':

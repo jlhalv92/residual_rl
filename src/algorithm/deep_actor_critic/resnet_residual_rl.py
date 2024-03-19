@@ -280,6 +280,7 @@ class ResnetResidualRL(DeepAC):
         self._Q = []
         self._rho = []
         self._old_Q = []
+        self._old_Q_tuned = []
         self._batch_size = to_parameter(batch_size)
         self._warmup_transitions = to_parameter(warmup_transitions)
         self._tau = to_parameter(tau)
@@ -357,7 +358,12 @@ class ResnetResidualRL(DeepAC):
 
         super().__init__(mdp_info, policy, actor_optimizer, policy_parameters)
 
-    def setup_residual(self, prior_agents, use_kl_on_pi=False, kl_on_pi_alpha=1e-3, copy_weights=False, use_policy=False):
+    def setup_residual(self, prior_agents,
+                       use_kl_on_pi=False,
+                       kl_on_pi_alpha=1e-3,
+                       copy_weights=False,
+                       use_policy=False,
+                       unfreeze_weights=False):
         """
             prior_agents ([mushroom object list]): The agent object from agents trained on prior tasks;
             use_kl_on_pi (bool): Whether to use a kl between the prior task policy and the new policy as a loss on the policy
@@ -367,13 +373,15 @@ class ResnetResidualRL(DeepAC):
         self._prior_policies = list()
         self._prior_state_dims = list()
         self._boosting = True
-
+        self._prior_agents = prior_agents
 
 
         if copy_weights:
-            self.copy_weights_critic(prior_agents[-1]._target_critic_approximator, self._target_critic_approximator)
-            self.copy_weights_critic(prior_agents[-1]._critic_approximator, self._critic_approximator)
+            self.copy_weights_critic(prior_agents[-1]._target_critic_approximator,
+                                     self._target_critic_approximator, unfreeze_weights)
 
+            self.copy_weights_critic(prior_agents[-1]._target_critic_approximator,
+                                     self._critic_approximator, unfreeze_weights)
 
         for prior_agent in prior_agents:
             self._prior_critic_approximators.append(
@@ -381,47 +389,72 @@ class ResnetResidualRL(DeepAC):
             self._prior_policies.append(prior_agent.policy)  # The policy object from an agent trained on a prior task
             # self._prior_state_dims.append(prior_agent._state_dim)
 
-
         if use_policy:
+            print("use policy")
             self.transfer_policy_parameters(self._prior_policies[-1], self.policy)
 
         self._use_kl_on_pi = use_kl_on_pi  # Whether to use a kl between the prior task policy and the new policy as a loss for the new policy
         self._kl_on_pi_alpha = kl_on_pi_alpha  # Alpha parameter to weight the KL divergence loss on the policy
         self._kl_with_prior = np.array([0.0])  # KL divergence with previous policy (numpy)
         self._kl_with_prior_t = torch.tensor(0.0)  # KL divergence with previous policy (torch)
-        #
-        # for i in range(2):
-        #     self._target_critic_approximator[i].set_weights(prior_agents[-1]._target_critic_approximator[i].get_weights())
-        #     self._critic_approximator[i].set_weights(prior_agents[-1]._critic_approximator[i].get_weights())
 
+    def compare_nets(self, current, target):
+        old_params = {}
+        params = {}
+        for i in range(len(current)):
+            print("network {}".format(i))
+            for name, param in current[i].network.named_parameters():
+                old_params[name] = param.detach().clone()
+            for name, param in target[i].network.named_parameters():
+                params[name] = param.detach().clone()
+            for key in old_params:
+                if key in params:
+                    if torch.equal(params[key], old_params[key]):
+                        print("Tensors in layer {} are equal.".format(key))
 
     def transfer_policy_parameters(self, source_model, target_model):
 
         target_model._mu_approximator.model.network.load_state_dict(source_model._mu_approximator.model.network.state_dict())
         target_model._sigma_approximator.model.network.load_state_dict(source_model._sigma_approximator.model.network.state_dict())
 
-    def copy_weights_critic(self, old_critic, current_critic):
+    def copy_weights_critic(self, current, target, unfreeze_weights):
+
+
+        for i in range(len(current)):
+            new_state_dict = target[i].network.state_dict()
+            old_state_dict = current[i].network.state_dict()
+            keys = list(old_state_dict.keys())
+
+            filtered_dict = {key: value for key, value in old_state_dict.items() if key in new_state_dict}
+
+            new_state_dict.update(filtered_dict)
+            target[i].network.load_state_dict(new_state_dict, strict=True)
+
+            if not unfreeze_weights:
+
+                for name, param in target[i].network.named_parameters():
+                    if name in keys:
+                        param.requires_grad = unfreeze_weights
+
+        # self.compare_nets(current, target)
+
+
+    def unfreeze_weights_critic(self, old_critic, current_critic):
+        print("Unfreezing freezing parameters")
         for i in range(len(old_critic)):
-            new_state_dict = current_critic[i].network.state_dict()
             old_state_dict = old_critic[i].network.state_dict()
             keys = list(old_state_dict.keys())
-            # print(current_critic[i].network)
-            # print(old_critic[i].network)
-            # exit()
-            filtered_dict = {key: old_state_dict[key] for key in keys}
-            new_state_dict.update(filtered_dict)
-            current_critic[i].network.load_state_dict(new_state_dict, strict=False)
 
             for name, param in current_critic[i].network.named_parameters():
                 if name in keys:
-                    param.requires_grad = False
+                    param.requires_grad = True
 
-    def unfreeze_network(self):
-        for i in range(len(self._target_critic_approximator)):
-            for name, param in self._critic_approximator[i].network.named_parameters():
-                param.requires_grad = True
-            for name, param in self._target_critic_approximator[i].network.named_parameters():
-                param.requires_grad = True
+    # def unfreeze_network(self):
+    #     for i in range(len(self._target_critic_approximator)):
+    #         for name, param in self._critic_approximator[i].network.named_parameters():
+    #             param.requires_grad = True
+    #         for name, param in self._target_critic_approximator[i].network.named_parameters():
+    #             param.requires_grad = True
 
     def fit(self, dataset):
         self._replay_memory.add(dataset)
@@ -456,6 +489,7 @@ class ResnetResidualRL(DeepAC):
                 action_new, log_prob = self.policy.compute_action_and_log_prob_t(state)
                 loss = self._loss(state, action_new, log_prob)
                 self._optimize_actor_parameters(loss)
+
                 if self._use_entropy:
                     self._update_alpha(log_prob.detach())
                 self._actor_last_loss = loss.detach().cpu().numpy()  # Store actor loss for logging
@@ -464,23 +498,57 @@ class ResnetResidualRL(DeepAC):
             q = reward + self.mdp_info.gamma * q_next
             self._Q.append(q.copy().mean())
 
-            rho_prior = np.zeros(q.shape)
-            for idx, prior_critic in enumerate(self._prior_critic_approximators):
-                # # Fitting a 'residual q' i.e 'rho'. So we subtract the prior_rho values
-                # Use prior rho values. Also use appropriate state-spaces as per the prior task
-                # prior_state = state[:, 0:self._prior_state_dims[idx]]
-                prior_state = state
-                rho_prior += prior_critic.predict(prior_state, action, prediction='min')
-                # rho -= rho_prior  # subtract the prior_rho value
-            rho = q - rho_prior
+            # rho_prior = np.zeros(q.shape)
+            # for idx, prior_critic in enumerate(self._prior_critic_approximators):
+            #     # # Fitting a 'residual q' i.e 'rho'. So we subtract the prior_rho values
+            #     # Use prior rho values. Also use appropriate state-spaces as per the prior task
+            #     # prior_state = state[:, 0:self._prior_state_dims[idx]]
+            #     prior_state = state
+            #     # rho_prior += prior_critic.predict(prior_state, action, prediction='min')
+            #     # rho_prior += prior_critic.predict(state, action, prediction='min')
+            #     # rho -= rho_prior  # subtract the prior_rho value
+            #     print(self._prior_critic_approximators[-1].predict(state, action, prediction='min').mean())
+
+            tune_old_q = self._critic_approximator.predict(state, action, old_q=True, prediction='min')
+            q_old = self._prior_critic_approximators[-1].predict(state, action, prediction='min')
+            # print(self.compare_nets(self._critic_approximator, self._prior_critic_approximators[-1]))
+            # exit()
+            rho = self._critic_approximator.predict(state, action, rho=True, prediction='min')
+
             self._rho.append(rho.copy().mean())
-            self._old_Q.append(rho_prior.copy().mean())
+            self._old_Q.append(q_old.copy().mean())
+            self._old_Q_tuned.append(tune_old_q.copy().mean())
+            # params = {}
+            # old_params = {}
+            #
+            # for name, param in self._critic_approximator[0].network.named_parameters():
+            #
+            #     old_params[name] = param.detach().clone()
+
+            # loss_critic = self._loss_critic(state, action, q)
+            # self._optimize_critic_parameters(loss_critic)
+
 
             self._critic_approximator.fit(state, action, q,
                                           **self._critic_fit_params)
 
+            # for name, param in self._critic_approximator[0].network.named_parameters():
+            #     params[name] = param.detach().clone()
+            #
+            # for key in params:
+            #     if torch.equal(params[key], old_params[key]):
+            #         print("Tensors in layer {} are equal.".format(key))
+
             self._update_target(self._critic_approximator,
                                 self._target_critic_approximator)
+
+
+
+
+    def _update_old_critics(self):
+        self.copy_weights_critic(self._target_critic_approximator,
+                                 self._prior_critic_approximators[-1],
+                                 False)
 
     def _loss(self, state, action_new, log_prob):
         rho_0 = self._critic_approximator(state, action_new,
@@ -500,6 +568,19 @@ class ResnetResidualRL(DeepAC):
             q -= self._alpha * log_prob
 
         return -q.mean()
+
+    # def _loss_critic(self, state, action, q_target):
+    #
+    #     rho_0 = self._critic_approximator(state, action,
+    #                                       output_tensor=True, idx=0)
+    #     rho_1 = self._critic_approximator(state, action,
+    #                                       output_tensor=True, idx=1)
+    #     q = torch.min(rho_0, rho_1)
+    #     q_target_tensor = torch.tensor(q_target).type(torch.FloatTensor).to(q.device)
+    #
+    #     loss = F.mse_loss(q, q_target_tensor)
+    #
+    #     return loss
 
     def _update_alpha(self, log_prob):
         alpha_loss = - (self._log_alpha * (log_prob + self._target_entropy)).mean()

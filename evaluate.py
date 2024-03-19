@@ -72,14 +72,13 @@ def experiment(alg):
     # MDP
     horizon = 1000
     gamma = 0.99
-    mdp = DMControl('walker', 'walk', horizon, gamma, use_pixels=False)
-
+    mdp = DMControl('walker', 'run', horizon, gamma, use_pixels=False)
     # Agent
     agent = Agent.load("src/nominal_models/walker/nominal_walker")
     # Algorithm
     core = Core(agent, mdp)
 
-    dataset =core.evaluate(n_episodes=3, render=True)
+    dataset =core.evaluate(n_episodes=1, render=True)
     s, *_ = parse_dataset(dataset)
 
     J = np.mean(compute_J(dataset, mdp.info.gamma))

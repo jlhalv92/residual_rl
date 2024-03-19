@@ -363,6 +363,9 @@ class ResidualRL(DeepAC):
             use_kl_on_pi (bool): Whether to use a kl between the prior task policy and the new policy as a loss on the policy
             kl_on_pi_alpha (float): Alpha parameter to weight the KL divergence loss on the policy
         """
+        self._rho = list()
+        self._old_Q = list()
+        self._Q = list()
         self._boosting = True
         self._prior_critic_approximators = list()
         self._prior_policies = list()
@@ -418,15 +421,20 @@ class ResidualRL(DeepAC):
 
             q_next = self._next_q(next_state, absorbing)
             q = reward + self.mdp_info.gamma * q_next
-            rho = q  # residual q
+            rho_prior_sum = np.zeros(q.shape)
             if self._boosting:
                 for idx, prior_critic in enumerate(self._prior_critic_approximators):
-                    # # Fitting a 'residual q' i.e 'rho'. So we subtract the prior_rho values
-                    # Use prior rho values. Also use appropriate state-spaces as per the prior task
-                    # prior_state = state[:, 0:self._prior_state_dims[idx]]
+
                     prior_state = state
                     rho_prior = prior_critic.predict(prior_state, action, prediction='min')
-                    rho -= rho_prior  # subtract the prior_rho value
+                    rho_prior_sum += rho_prior
+
+            rho = q - rho_prior_sum  # subtract the prior_rho value
+
+            self._rho.append(rho.copy().mean())
+            self._old_Q.append(rho_prior_sum.copy().mean())
+
+            self._Q.append(q.copy().mean())
 
             self._critic_approximator.fit(state, action, rho,
                                           **self._critic_fit_params)
