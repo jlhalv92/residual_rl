@@ -9,7 +9,7 @@ from mushroom_rl.algorithms.actor_critic import SAC
 from mushroom_rl.core import Core, Logger
 from src.envs.dm_control_env import DMControl
 from mushroom_rl.utils.dataset import compute_J, parse_dataset
-from src.networks.networks import CriticNetwork, ActorNetwork
+from src.networks.networks import CriticNetwork, ActorNetwork, TransferCritic
 from tqdm import trange
 import wandb
 
@@ -24,11 +24,13 @@ def experiment(alg, n_epochs, n_steps, n_episodes_test, run_id):
     # MDP
     horizon = 500
     gamma = 0.99
-    mdp = DMControl('walker', 'run', horizon, gamma, use_pixels=False)
+    mdp = DMControl('walker', 'cargo', horizon, gamma, use_pixels=False)
+    # mdp.env.task._move_speed = 4.
+
     wandb.init(
         # set the wandb project where this run will be logged
-        project="walker_run_comparison",
-        name="transfer"
+        project="walker_cargo_comparison",
+        name="extended_transfer_v2"
     )
 
     # Settings
@@ -59,7 +61,7 @@ def experiment(alg, n_epochs, n_steps, n_episodes_test, run_id):
                        'params': {'lr': 3e-4}}
 
     critic_input_shape = (actor_input_shape[0] + mdp.info.action_space.shape[0],)
-    critic_params = dict(network=CriticNetwork,
+    critic_params = dict(network=TransferCritic,
                          optimizer={'class': optim.Adam,
                                     'params': {'lr': 3e-4}},
                          loss=F.mse_loss,
@@ -80,10 +82,10 @@ def experiment(alg, n_epochs, n_steps, n_episodes_test, run_id):
 
     old_agent = alg.load("src/nominal_models/walker/nominal_walker")
 
-    agent.setup_transfer(prior_agents=[old_agent])
+    agent.setup_transfer(prior_agents=[old_agent], use_policy=False, unfreeze_weights=False)
 
     # RUN
-    dataset = core.evaluate(n_steps=n_episodes_test, render=False)
+    dataset = core.evaluate(n_episodes=n_episodes_test, render=False)
     s, *_ = parse_dataset(dataset)
 
     J = np.mean(compute_J(dataset, mdp.info.gamma))
@@ -110,7 +112,7 @@ def experiment(alg, n_epochs, n_steps, n_episodes_test, run_id):
     # logger.info('Press a button to visualize pendulum')
     # input()
     # core.evaluate(n_episodes=5, render=True)
-    agent.save("checkpoint/transfer_comparison_RUN_{}".format(run_id))
+    agent.save("checkpoint/extended_cargo_v2{}".format(run_id))
     wandb.finish()
 
 if __name__ == '__main__':
@@ -119,4 +121,4 @@ if __name__ == '__main__':
     ]
 
     for i in range(5):
-        experiment(alg=TransferRL, n_epochs=50, n_steps=5000, n_episodes_test=10, run_id=i)
+        experiment(alg=TransferRL, n_epochs=20, n_steps=5000, n_episodes_test=10, run_id=i)

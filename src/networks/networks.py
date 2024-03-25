@@ -33,6 +33,125 @@ class ResidualBlock2(nn.Module):
         return rho1
 
 
+class ResidualBlockFeatures(nn.Module):
+    def __init__(self, n_features, n_input, n_output,  **kwargs):
+        super(ResidualBlockFeatures, self).__init__()
+
+        self.layer_1 = nn.Linear(n_input + n_features, 2*n_features)
+        self.layer_2 = nn.Linear(2*n_features, 4*n_features)
+        self.layer_3 = nn.Linear(4*n_features, 4*n_features)
+        self.layer_out = nn.Linear(4*n_features, n_output)
+
+        nn.init.xavier_uniform_(self.layer_1.weight,
+                                gain=nn.init.calculate_gain('relu'))
+        nn.init.xavier_uniform_(self.layer_2.weight,
+                                gain=nn.init.calculate_gain('relu'))
+        nn.init.xavier_uniform_(self.layer_3.weight,
+                                gain=nn.init.calculate_gain('relu'))
+        nn.init.xavier_uniform_(self.layer_out.weight,
+                                gain=nn.init.calculate_gain('linear'))
+
+    def forward(self, value, state, action, features):
+        state_action_features = torch.cat((state.float(), action.float(), features.float()), dim=1)
+        identity = value
+        features1 = F.relu(self.layer_1(state_action_features))
+        features2 = F.relu(self.layer_2(features1))
+        features3 = F.relu(self.layer_3(features2))
+        rho1 = self.layer_out(features3)
+        rho1 += identity
+        return rho1
+
+class QRES_Features(nn.Module):
+    def __init__(self, input_shape, output_shape, n_features, **kwargs):
+        super(QRES_Features, self).__init__()
+
+        n_input = input_shape[-1]
+        n_output = output_shape[0]
+        self._in = nn.Linear(n_input, n_features)
+        self._h1 = nn.Linear(n_features, n_features)
+        self._h2 = nn.Linear(n_features, n_features)
+        self._out = nn.Linear(n_features, n_output)
+
+        self._rho_0 = ResidualBlockFeatures(n_features, n_input, n_output)
+
+
+    def forward(self, state, action, old_q=False, rho=False):
+        state_action = torch.cat((state.float(), action.float()), dim=1)
+
+        features1 = F.relu(self._in(state_action))
+        features2 = F.relu(self._h1(features1))
+        features3 = F.relu(self._h2(features2))
+        q_0 = self._out(features3)
+        q = self._rho_0(q_0, state, action, features3)
+
+        if old_q:
+            return torch.squeeze(q_0)
+        if rho:
+            return torch.squeeze(q-q_0)
+
+        return torch.squeeze(q)
+
+
+
+class ResidualBlockFeaturesSlim(nn.Module):
+    def __init__(self, n_features, n_input, n_output,  **kwargs):
+        super(ResidualBlockFeaturesSlim, self).__init__()
+        n_features_res = n_input + n_features
+
+        self.layer_1 = nn.Linear(n_features_res, n_features_res)
+        self.layer_2 = nn.Linear(n_features_res, n_features_res)
+        self.layer_3 = nn.Linear(n_features_res, n_features_res)
+        self.layer_out = nn.Linear(n_features_res, n_output)
+
+        nn.init.xavier_uniform_(self.layer_1.weight,
+                                gain=nn.init.calculate_gain('relu'))
+        nn.init.xavier_uniform_(self.layer_2.weight,
+                                gain=nn.init.calculate_gain('relu'))
+        nn.init.xavier_uniform_(self.layer_3.weight,
+                                gain=nn.init.calculate_gain('relu'))
+        nn.init.xavier_uniform_(self.layer_out.weight,
+                                gain=nn.init.calculate_gain('linear'))
+
+    def forward(self, value, state, action, features):
+        state_action_features = torch.cat((state.float(), action.float(), features.float()), dim=1)
+        identity = value
+        features1 = F.relu(self.layer_1(state_action_features))
+        features2 = F.relu(self.layer_2(features1))
+        features3 = F.relu(self.layer_3(features2))
+        rho1 = self.layer_out(features3)
+        rho1 += identity
+        return rho1
+
+class QRES_FeaturesSlim(nn.Module):
+    def __init__(self, input_shape, output_shape, n_features, **kwargs):
+        super(QRES_FeaturesSlim, self).__init__()
+
+        n_input = input_shape[-1]
+        n_output = output_shape[0]
+        self._in = nn.Linear(n_input, n_features)
+        self._h1 = nn.Linear(n_features, n_features)
+        self._h2 = nn.Linear(n_features, n_features)
+        self._out = nn.Linear(n_features, n_output)
+
+        self._rho_0 = ResidualBlockFeaturesSlim(n_features, n_input, n_output)
+
+
+    def forward(self, state, action, old_q=False, rho=False):
+        state_action = torch.cat((state.float(), action.float()), dim=1)
+
+        features1 = F.relu(self._in(state_action))
+        features2 = F.relu(self._h1(features1))
+        features3 = F.relu(self._h2(features2))
+        q_0 = self._out(features3)
+        q = self._rho_0(q_0, state, action, features3)
+
+        if old_q:
+            return torch.squeeze(q_0)
+        if rho:
+            return torch.squeeze(q-q_0)
+
+        return torch.squeeze(q)
+
 class ResidualBlockNoQ(nn.Module):
     def __init__(self, n_features, n_input, n_output,  **kwargs):
         super(ResidualBlockNoQ, self).__init__()
@@ -243,10 +362,6 @@ class QRESLIM(nn.Module):
 
         self._rho_0 = ResidualBlock2(n_features, n_input, n_output)
 
-        # nn.init.xavier_uniform_(self._in.weight, gain=nn.init.calculate_gain("relu"))
-        # nn.init.xavier_uniform_(self._h1.weight, gain=nn.init.calculate_gain("relu"))
-        # nn.init.xavier_uniform_(self._h2.weight, gain=nn.init.calculate_gain("relu"))
-        # nn.init.xavier_uniform_(self._out.weight, gain=nn.init.calculate_gain("linear"))
 
     def forward(self, state, action, old_q=False, rho=False):
         state_action = torch.cat((state.float(), action.float()), dim=1)
@@ -254,11 +369,14 @@ class QRESLIM(nn.Module):
         features1 = F.relu(self._in(state_action))
         features2 = F.relu(self._h1(features1))
         features3 = F.relu(self._h2(features2))
+
         q_0 = self._out(features3)
+
         q = self._rho_0(q_0, state, action)
 
         if old_q:
             return torch.squeeze(q_0)
+
         if rho:
             return torch.squeeze(q-q_0)
 
@@ -616,5 +734,43 @@ class CriticNetwork(nn.Module):
         features3 = F.relu(self._h2(features2))
 
         q = self._out(features3)
+
+        return torch.squeeze(q)
+
+
+class TransferCritic(nn.Module):
+    """
+    Generic critic network architecture
+    """
+    def __init__(self, input_shape, output_shape, n_features, **kwargs):
+        super().__init__()
+
+        n_input = input_shape[-1]
+        n_output = output_shape[0]
+
+        self._in = nn.Linear(n_input, n_features)
+        self._h1 = nn.Linear(n_features, n_features)
+        self._h2 = nn.Linear(n_features, n_features)
+        self._h3 = nn.Linear(n_features, n_features)
+        self._h4 = nn.Linear(n_features, n_features)
+        self._h5 = nn.Linear(n_features, n_features)
+        self._out_q = nn.Linear(n_features, n_output)
+
+        nn.init.xavier_uniform_(self._h3.weight, gain=nn.init.calculate_gain("relu"))
+        nn.init.xavier_uniform_(self._h4.weight, gain=nn.init.calculate_gain("relu"))
+        nn.init.xavier_uniform_(self._h5.weight, gain=nn.init.calculate_gain("relu"))
+        nn.init.xavier_uniform_(self._out_q.weight, gain=nn.init.calculate_gain("linear"))
+
+    def forward(self, state, action):
+        state_action = torch.cat((state.float(), action.float()), dim=1)
+
+        features1 = F.relu(self._in(state_action))
+        features2 = F.relu(self._h1(features1))
+        features3 = F.relu(self._h2(features2))
+        features4 = F.relu(self._h3(features3))
+        features5 = F.relu(self._h4(features4))
+        features6 = F.relu(self._h5(features5))
+
+        q = self._out_q(features6)
 
         return torch.squeeze(q)

@@ -355,7 +355,7 @@ class TransferRL(DeepAC):
 
         super().__init__(mdp_info, policy, actor_optimizer, policy_parameters)
 
-    def setup_transfer(self, prior_agents):
+    def setup_transfer(self, prior_agents, use_policy=False, unfreeze_weights=False):
         """
             prior_agents ([mushroom object list]): The agent object from agents trained on prior tasks;
             use_kl_on_pi (bool): Whether to use a kl between the prior task policy and the new policy as a loss on the policy
@@ -371,11 +371,42 @@ class TransferRL(DeepAC):
             self._prior_policies.append(prior_agent.policy)  # The policy object from an agent trained on a prior task
             # self._prior_state_dims.append(prior_agent._state_dim)
 
+        self.copy_weights_critic(prior_agents[-1]._target_critic_approximator,
+                                 self._target_critic_approximator, unfreeze_weights)
 
-        for i in range(2):
-            self._target_critic_approximator[i].set_weights(prior_agents[-1]._target_critic_approximator[i].get_weights())
-            self._critic_approximator[i].set_weights(prior_agents[-1]._critic_approximator[i].get_weights())
+        self.copy_weights_critic(prior_agents[-1]._target_critic_approximator,
+                                 self._critic_approximator, unfreeze_weights)
 
+        # for i in range(2):
+        #     self._target_critic_approximator[i].set_weights(prior_agents[-1]._target_critic_approximator[i].get_weights())
+        #     self._critic_approximator[i].set_weights(prior_agents[-1]._critic_approximator[i].get_weights())
+
+        if use_policy:
+            print("use policy")
+            self.transfer_policy_parameters(self._prior_policies[-1], self.policy)
+
+    def transfer_policy_parameters(self, source_model, target_model):
+
+        target_model._mu_approximator.model.network.load_state_dict(source_model._mu_approximator.model.network.state_dict())
+        target_model._sigma_approximator.model.network.load_state_dict(source_model._sigma_approximator.model.network.state_dict())
+
+    def copy_weights_critic(self, current, target, unfreeze_weights=False):
+
+        for i in range(len(current)):
+            new_state_dict = target[i].network.state_dict()
+            old_state_dict = current[i].network.state_dict()
+            keys = list(old_state_dict.keys())
+
+            filtered_dict = {key: value for key, value in old_state_dict.items() if key in new_state_dict}
+
+            new_state_dict.update(filtered_dict)
+            target[i].network.load_state_dict(new_state_dict, strict=True)
+
+            if not unfreeze_weights:
+
+                for name, param in target[i].network.named_parameters():
+                    if name in keys:
+                        param.requires_grad = unfreeze_weights
     def fit(self, dataset):
         self._replay_memory.add(dataset)
         if self._replay_memory.initialized:

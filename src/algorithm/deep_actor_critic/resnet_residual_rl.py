@@ -375,7 +375,6 @@ class ResnetResidualRL(DeepAC):
         self._boosting = True
         self._prior_agents = prior_agents
 
-
         if copy_weights:
             self.copy_weights_critic(prior_agents[-1]._target_critic_approximator,
                                      self._target_critic_approximator, unfreeze_weights)
@@ -391,7 +390,8 @@ class ResnetResidualRL(DeepAC):
 
         if use_policy:
             print("use policy")
-            self.transfer_policy_parameters(self._prior_policies[-1], self.policy)
+            # self.transfer_policy_parameters(self._prior_policies[-1], self.policy)
+            self.policy.set_weights(self._prior_policies[-1].get_weights())
 
         self._use_kl_on_pi = use_kl_on_pi  # Whether to use a kl between the prior task policy and the new policy as a loss for the new policy
         self._kl_on_pi_alpha = kl_on_pi_alpha  # Alpha parameter to weight the KL divergence loss on the policy
@@ -431,7 +431,7 @@ class ResnetResidualRL(DeepAC):
             target[i].network.load_state_dict(new_state_dict, strict=True)
 
             if not unfreeze_weights:
-
+                print("Freeze")
                 for name, param in target[i].network.named_parameters():
                     if name in keys:
                         param.requires_grad = unfreeze_weights

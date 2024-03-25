@@ -9,7 +9,7 @@ from mushroom_rl.algorithms.actor_critic import SAC
 from mushroom_rl.core import Core, Logger
 from src.envs.dm_control_env import DMControl
 from mushroom_rl.utils.dataset import compute_J, parse_dataset
-from src.networks.networks import CriticNetwork, ActorNetwork, QRESLIM
+from src.networks.networks import CriticNetwork, ActorNetwork, QRES_FeaturesSlim, QRESLIM
 from tqdm import trange
 import wandb
 from joblib import Parallel, delayed
@@ -21,21 +21,38 @@ def experiment(alg, n_epochs, n_steps, n_episodes_test, run_id):
     logger = Logger(alg.__name__, results_dir=None)
     logger.strong_line()
     logger.info('Experiment Algorithm: ' + alg.__name__)
+    Critic_dict = {"BaseCritic":CriticNetwork,
+                   "ResnetResidualRL": QRESLIM,
+                   "ResnetResidualRL_Feactures": QRES_FeaturesSlim }
 
+    Critic = Critic_dict["ResnetResidualRL_Feactures"]
     # MDP
     horizon = 500
     gamma = 0.99
+    # method
+    use_kl_on_pi = False
+    kl_on_pi_alpha = 0.1
+    copy_weights = True
+    unfreeze_weights = True
+    use_policy = False
+    domain = "walk"
+    boosting = True
+    algo_version = "features_unfreeze"
+
     mdp = DMControl('walker',
-                    'walk',
+                    domain,
                     horizon,
                     gamma,
                     use_pixels=False)
     log = True
+
+    # mdp.env.task._move_speed = 4.
+
     if log:
         wandb.init(
             # set the wandb project where this run will be logged
-            project="walker_walk_comparison",
-            name="resnetResidual_walk_unfreeze"
+            project="walker_task_{}".format(domain),
+            name="resnetResidual_{}".format(algo_version)
         )
 
     # Settings
@@ -44,7 +61,7 @@ def experiment(alg, n_epochs, n_steps, n_episodes_test, run_id):
     batch_size = 400
     n_features = 400
     # warmup_transitions = 0.015*n_steps*n_epochs
-    warmup_transitions = 0.012*n_steps*n_epochs
+    warmup_transitions = 0.015*n_steps*n_epochs
 
     tau = 0.005
     lr_alpha = 3e-4
@@ -68,7 +85,7 @@ def experiment(alg, n_epochs, n_steps, n_episodes_test, run_id):
                        'params': {'lr': 3e-4}}
 
     critic_input_shape = (actor_input_shape[0] + mdp.info.action_space.shape[0],)
-    critic_params = dict(network=QRESLIM,
+    critic_params = dict(network=Critic,
                          optimizer={'class': optim.Adam,
                                     'params': {'lr': 3e-4}},
                          loss=F.mse_loss,
@@ -84,16 +101,17 @@ def experiment(alg, n_epochs, n_steps, n_episodes_test, run_id):
                 log_std_min=-3, log_std_max=2, target_entropy=None, critic_fit_params=None)
 
     # Algorithm
-    boosting = True
+    boosting = boosting
     core = Core(agent, mdp)
     if boosting:
         old_agent = alg.load("src/nominal_models/walker/nominal_walker")
 
         agent.setup_residual(prior_agents=[old_agent],
-                             use_kl_on_pi=False,
-                             kl_on_pi_alpha=0.1,
-                             copy_weights=True,
-                             unfreeze_weights=True)
+                             use_kl_on_pi=use_kl_on_pi,
+                             kl_on_pi_alpha=kl_on_pi_alpha,
+                             copy_weights=copy_weights,
+                             unfreeze_weights=unfreeze_weights,
+                             use_policy=use_policy)
 
     # RUN
     dataset = core.evaluate(n_episodes=n_episodes_test, render=False)
@@ -126,14 +144,14 @@ def experiment(alg, n_epochs, n_steps, n_episodes_test, run_id):
         agent._old_Q = []
         agent._old_Q_tuned = []
 
-        logs_dict = {"RETURN": J, "REWARD": R}
+        logs_dict = {"RETURN": J, "REWARD": R, "Q":Q, "rho":rho, "old_q":old_q, "tuned_old_q": tuned_old_q}
         if log:
             wandb.log(logs_dict, step=n)
 
     # logger.info('Press a button to visualize pendulum')
     # input()
     # core.evaluate(n_episodes=5, render=True)
-    agent.save("checkpoint/resnetResidual_unfreeze_walk_v2{}".format(run_id))
+    agent.save("checkpoint/resnetResidual_{}_{}".format(domain , run_id))
     wandb.finish()
 
 if __name__ == '__main__':
@@ -144,7 +162,7 @@ if __name__ == '__main__':
     #     experiment(alg=ResnetResidualRL, n_epochs=50, n_steps=5000, n_episodes_test=10, run_id=i)
     for i in range(5):
     # n_experiment = 5
-        experiment(alg=ResnetResidualRL, n_epochs=50, n_steps=5000, n_episodes_test=10, run_id=i)
+        experiment(alg=ResnetResidualRL, n_epochs=15, n_steps=5000, n_episodes_test=10, run_id=i)
     # Parallel(n_jobs=5)()
     # for x in range(5):
     #

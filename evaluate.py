@@ -72,7 +72,7 @@ def experiment(alg):
     # MDP
     horizon = 1000
     gamma = 0.99
-    mdp = DMControl('walker', 'run', horizon, gamma, use_pixels=False)
+    mdp = DMControl('walker', 'icy', horizon, gamma, use_pixels=False)
     # Agent
     agent = Agent.load("src/nominal_models/walker/nominal_walker")
     # Algorithm

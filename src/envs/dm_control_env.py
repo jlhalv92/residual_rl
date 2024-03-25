@@ -2,10 +2,10 @@ import warnings
 
 with warnings.catch_warnings():
     warnings.filterwarnings("ignore", category=DeprecationWarning)
-    from dm_control import suite
+   # from dm_control import suite
     from dm_control.suite.wrappers import pixels
 
-
+from src.dm_control import suite
 from mushroom_rl.core import Environment, MDPInfo
 from mushroom_rl.utils.spaces import *
 from ..utils.ultils_viewer import CV2Viewer
