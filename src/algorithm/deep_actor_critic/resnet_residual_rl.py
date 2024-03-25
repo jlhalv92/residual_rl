@@ -120,7 +120,7 @@ class RLPolicy(Policy):
 
         """
         # Continuous
-        cont_dist = self.cont_distribution(state)
+        cont_dist = self.distribution(state)
         a_cont_raw = cont_dist.rsample()
         a_cont = torch.tanh(a_cont_raw)
         a_cont_true = a_cont * self._delta_a + self._central_a
@@ -136,7 +136,7 @@ class RLPolicy(Policy):
         else:
             return a_cont_true
 
-    def cont_distribution(self, state):
+    def distribution(self, state):
         """
         Compute the continous (Gaussian) policy distribution in the given states.
 
@@ -471,7 +471,7 @@ class ResnetResidualRL(DeepAC):
 
                     prior_cont_dist = self._prior_policies[-1].distribution(
                         prior_state)  # use prior_state for the immediate previous task
-                    curr_cont_dist = self.policy.cont_distribution(state)
+                    curr_cont_dist = self.policy.distribution(state)
                     # Convert to MultivariateNormal distributions (for KL calculation)
                     prior_multiv_cont_dist = torch.distributions.MultivariateNormal(prior_cont_dist.mean,
                                                                                     torch.diag_embed(
