@@ -431,12 +431,7 @@ class QRESLIM2(nn.Module):
         self._rho_1 = ResidualBlock2(n_features, n_input, n_output)
 
 
-        # nn.init.xavier_uniform_(self._in.weight, gain=nn.init.calculate_gain("relu"))
-        # nn.init.xavier_uniform_(self._h1.weight, gain=nn.init.calculate_gain("relu"))
-        # nn.init.xavier_uniform_(self._h2.weight, gain=nn.init.calculate_gain("relu"))
-        # nn.init.xavier_uniform_(self._out.weight, gain=nn.init.calculate_gain("linear"))
-
-    def forward(self, state, action):
+    def forward(self, state, action, old_q=False, rho=False):
         state_action = torch.cat((state.float(), action.float()), dim=1)
 
         features1 = F.relu(self._in(state_action))
@@ -444,9 +439,15 @@ class QRESLIM2(nn.Module):
         features3 = F.relu(self._h2(features2))
         q_0 = self._out(features3)
         q_1 = self._rho_0(q_0, state, action)
-        q_2 = self._rho_1(q_1, state, action)
+        q = self._rho_1(q_1, state, action)
 
-        return torch.squeeze(q_2)
+        if old_q:
+            return torch.squeeze(q_0 + q_1)
+
+        if rho:
+            return torch.squeeze(q-(q_0+q_1))
+
+        return torch.squeeze(q)
 
 
 class QRESLIM3(nn.Module):
@@ -465,24 +466,25 @@ class QRESLIM3(nn.Module):
         self._rho_1 = ResidualBlock2(n_features, n_input, n_output)
         self._rho_2 = ResidualBlock2(n_features, n_input, n_output)
 
-        # nn.init.xavier_uniform_(self._in.weight, gain=nn.init.calculate_gain("relu"))
-        # nn.init.xavier_uniform_(self._h1.weight, gain=nn.init.calculate_gain("relu"))
-        # nn.init.xavier_uniform_(self._h2.weight, gain=nn.init.calculate_gain("relu"))
-        # nn.init.xavier_uniform_(self._out.weight, gain=nn.init.calculate_gain("linear"))
 
-    def forward(self, state, action):
+    def forward(self, state, action,  old_q=False, rho=False):
         state_action = torch.cat((state.float(), action.float()), dim=1)
 
         features1 = F.relu(self._in(state_action))
         features2 = F.relu(self._h1(features1))
         features3 = F.relu(self._h2(features2))
         q_0 = self._out(features3)
-        q = self._rho_0(q_0, state, action)
         q_1 = self._rho_0(q_0, state, action)
         q_2 = self._rho_1(q_1, state, action)
-        q_3 = self._rho_2(q_2, state, action)
+        q = self._rho_2(q_2, state, action)
 
-        return torch.squeeze(q_3)
+        if old_q:
+            return torch.squeeze(q_0 + q_1 + q_2)
+
+        if rho:
+            return torch.squeeze(q-(q_0 + q_1 + q_2))
+
+        return torch.squeeze(q)
 
 
 
