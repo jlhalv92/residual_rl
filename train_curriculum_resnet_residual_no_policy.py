@@ -38,7 +38,7 @@ def experiment(alg, n_epochs, n_steps, n_episodes_test, run_id, target_speed, re
         wandb.init(
             # set the wandb project where this run will be logged
             project="walker_run_curriculum",
-            name="residual_resnet_curriculum_4_steps"
+            name="residual_resnet_curriculum_4_steps_np"
         )
 
     # Settings
@@ -146,7 +146,7 @@ def experiment(alg, n_epochs, n_steps, n_episodes_test, run_id, target_speed, re
     # logger.info('Press a button to visualize pendulum')
     # input()
     # core.evaluate(n_episodes=5, render=True)
-    agent.save("checkpoint/walker_run_curriculum_4_steps_{}_{}".format(curriculum_id, run_id))
+    agent.save("checkpoint/walker_run_curriculum_4_steps_np_{}_{}".format(curriculum_id, run_id))
     if stop_log:
         wandb.finish()
 
@@ -162,7 +162,7 @@ if __name__ == '__main__':
         target_speed_list = [2., 4., 6.,  8.]
         epochs = [10, 10, 10, 10]
         ref_epochs = [0, 10, 20, 30]
-        rhos = ["checkpoint/walker_run_curriculum_4_steps_{}_{}".format(j, i) for j in range(2)]
+        rhos = ["checkpoint/walker_run_curriculum_4_steps_np_{}_{}".format(j, i) for j in range(2)]
         residuals.extend(rhos)
         stop_log = False
         for j in range(len(target_speed_list)):
