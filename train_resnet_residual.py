@@ -4,6 +4,8 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
+
+from src.algorithm.deep_actor_critic.residual_rl import ResidualRL
 from src.algorithm.deep_actor_critic.resnet_residual_rl import ResnetResidualRL
 from mushroom_rl.algorithms.actor_critic import SAC
 from mushroom_rl.core import Core, Logger
@@ -23,21 +25,23 @@ def experiment(alg, n_epochs, n_steps, n_episodes_test, run_id):
     logger.info('Experiment Algorithm: ' + alg.__name__)
     Critic_dict = {"BaseCritic":CriticNetwork,
                    "ResnetResidualRL": QRESLIM,
-                   "ResnetResidualRL_Feactures": QRES_FeaturesSlim }
+                   "ResnetResidualRL_Feactures": QRES_FeaturesSlim}
 
-    Critic = Critic_dict["ResnetResidualRL_Feactures"]
+    Critic = Critic_dict["ResnetResidualRL"]
     # MDP
     horizon = 500
     gamma = 0.99
     # method
-    use_kl_on_pi = False
-    kl_on_pi_alpha = 0.1
+    use_kl_on_pi = True
+    kl_on_pi_alpha = 0.8
     copy_weights = True
-    unfreeze_weights = True
+    unfreeze_weights = False
     use_policy = False
-    domain = "walk"
+    domain = "run"
     boosting = True
-    algo_version = "features_unfreeze"
+    algo_version = "kl_0.8"
+
+
 
     mdp = DMControl('walker',
                     domain,
@@ -45,8 +49,8 @@ def experiment(alg, n_epochs, n_steps, n_episodes_test, run_id):
                     gamma,
                     use_pixels=False)
     log = True
-
-    # mdp.env.task._move_speed = 4.
+    run_speed = 3.
+    mdp.env.task._move_speed = run_speed
 
     if log:
         wandb.init(
@@ -156,10 +160,6 @@ def experiment(alg, n_epochs, n_steps, n_episodes_test, run_id):
 
 if __name__ == '__main__':
 
-    # logger = Logger("test", results_dir=None)
-    # logger.strong_line()
-    # for i in range(5):
-    #     experiment(alg=ResnetResidualRL, n_epochs=50, n_steps=5000, n_episodes_test=10, run_id=i)
     for i in range(5):
     # n_experiment = 5
         experiment(alg=ResnetResidualRL, n_epochs=15, n_steps=5000, n_episodes_test=10, run_id=i)

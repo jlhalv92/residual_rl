@@ -442,10 +442,10 @@ class QRESLIM2(nn.Module):
         q = self._rho_1(q_1, state, action)
 
         if old_q:
-            return torch.squeeze(q_0 + q_1)
+            return torch.squeeze(q_1)
 
         if rho:
-            return torch.squeeze(q-(q_0+q_1))
+            return torch.squeeze(q-q_1)
 
         return torch.squeeze(q)
 
@@ -479,13 +479,51 @@ class QRESLIM3(nn.Module):
         q = self._rho_2(q_2, state, action)
 
         if old_q:
-            return torch.squeeze(q_0 + q_1 + q_2)
+            return torch.squeeze(q_2)
 
         if rho:
-            return torch.squeeze(q-(q_0 + q_1 + q_2))
+            return torch.squeeze(q-q_2)
 
         return torch.squeeze(q)
 
+
+class QRESLIM4(nn.Module):
+    def __init__(self, input_shape, output_shape, n_features, **kwargs):
+        super(QRESLIM4, self).__init__()
+
+        n_input = input_shape[-1]
+        n_output = output_shape[0]
+
+        self._in = nn.Linear(n_input, n_features)
+        self._h1 = nn.Linear(n_features, n_features)
+        self._h2 = nn.Linear(n_features, n_features)
+        self._out = nn.Linear(n_features, n_output)
+
+        self._rho_0 = ResidualBlock2(n_features, n_input, n_output)
+        self._rho_1 = ResidualBlock2(n_features, n_input, n_output)
+        self._rho_2 = ResidualBlock2(n_features, n_input, n_output)
+        self._rho_3 = ResidualBlock2(n_features, n_input, n_output)
+
+
+    def forward(self, state, action,  old_q=False, rho=False):
+        state_action = torch.cat((state.float(), action.float()), dim=1)
+
+        features1 = F.relu(self._in(state_action))
+        features2 = F.relu(self._h1(features1))
+        features3 = F.relu(self._h2(features2))
+        q_0 = self._out(features3)
+        q_1 = self._rho_0(q_0, state, action)
+        q_2 = self._rho_1(q_1, state, action)
+        q_3 = self._rho_2(q_2, state, action)
+        q = self._rho_2(q_3, state, action)
+
+        if old_q:
+            return torch.squeeze(q_2)
+
+        if rho:
+            return torch.squeeze(q-q_2)
+
+        return torch.squeeze(q)
 
 
 class QRESBIG(nn.Module):

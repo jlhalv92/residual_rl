@@ -100,7 +100,7 @@ def experiment(alg, n_epochs, n_steps, n_episodes_test, run_id, target_speed, re
         use_policy = False
 
         if curriculum_id > 0:
-            use_policy = True
+            use_policy = False
 
         agent.setup_residual(prior_agents=old_agents,
                              use_kl_on_pi=False,

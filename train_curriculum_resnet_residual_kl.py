@@ -103,8 +103,8 @@ def experiment(alg, n_epochs, n_steps, n_episodes_test, run_id, target_speed, re
             use_policy = True
 
         agent.setup_residual(prior_agents=old_agents,
-                             use_kl_on_pi=False,
-                             kl_on_pi_alpha=0.08,
+                             use_kl_on_pi=True,
+                             kl_on_pi_alpha=0.1,
                              copy_weights=True,
                              use_policy=use_policy)
 
