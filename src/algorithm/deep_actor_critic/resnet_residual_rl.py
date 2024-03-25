@@ -167,7 +167,7 @@ class RLPolicy(Policy):
 
         """
         # Continuous dist and action
-        cont_distr = self.cont_distribution(state)
+        cont_distr = self.distribution(state)
         act_cont_raw = cont_distr.rsample()
         act_cont_true = torch.tanh(act_cont_raw) * self._delta_a + self._central_a
 
